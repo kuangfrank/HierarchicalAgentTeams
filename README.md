@@ -137,35 +137,35 @@ GET /agents
             "name": "第3层 - 执行节点",
             "nodes": {
                 "searcher": {
-                    "name": "搜索器",
+                    "name": "网页搜索智能体",
                     "role": "Search Specialist",
                     "description": "负责网络搜索和信息查找",
                     "tools": ["web_search"],
                     "layer": 3
                 },
                 "web_crawler": {
-                    "name": "网页爬虫",
+                    "name": "网页爬取智能体",
                     "role": "Web Crawler Specialist",
                     "description": "负责网页内容抓取",
                     "tools": ["web_crawler"],
                     "layer": 3
                 },
                 "writer": {
-                    "name": "写作者",
+                    "name": "文档写作智能体",
                     "role": "Writing Specialist",
                     "description": "负责文档撰写",
                     "tools": ["write_document", "read_document", "create_outline"],
                     "layer": 3
                 },
-                "notebook": {
-                    "name": "记事本",
-                    "role": "Notebook Specialist",
-                    "description": "负责创建和管理笔记",
-                    "tools": ["create_notebook"],
+                "outline": {
+                    "name": "大纲生成智能体",
+                    "role": "Outline Generation Specialist",
+                    "description": "负责创建文档大纲",
+                    "tools": ["create_outline"],
                     "layer": 3
                 },
                 "chart_generator": {
-                    "name": "图表生成器",
+                    "name": "图表生成智能体",
                     "role": "Chart Generation Specialist",
                     "description": "负责数据可视化",
                     "tools": ["generate_chart"],

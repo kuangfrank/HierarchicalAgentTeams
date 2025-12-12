@@ -53,13 +53,13 @@
                   <div class="tree-node child-node">
                     <span class="leaf-connector">│  ├─</span>
                     <span class="node-icon">🔍</span>
-                    <span class="node-name">搜索器</span>
+                    <span class="node-name">网页搜索智能体</span>
                     <span :class="['agent-status-dot', 'idle']"></span>
                   </div>
                   <div class="tree-node child-node">
                     <span class="leaf-connector">│  └─</span>
                     <span class="node-icon">🕷️</span>
-                    <span class="node-name">网页爬虫</span>
+                    <span class="node-name">网页爬取智能体</span>
                     <span :class="['agent-status-dot', 'idle']"></span>
                   </div>
                 </div>
@@ -77,19 +77,19 @@
                   <div class="tree-node child-node">
                     <span class="leaf-connector">   ├─</span>
                     <span class="node-icon">✍️</span>
-                    <span class="node-name">写作者</span>
+                    <span class="node-name">文档写作智能体</span>
                     <span :class="['agent-status-dot', 'idle']"></span>
                   </div>
                   <div class="tree-node child-node">
                     <span class="leaf-connector">   ├─</span>
                     <span class="node-icon">📓</span>
-                    <span class="node-name">记事本</span>
+                    <span class="node-name">大纲生成智能体</span>
                     <span :class="['agent-status-dot', 'idle']"></span>
                   </div>
                   <div class="tree-node child-node">
                     <span class="leaf-connector">   └─</span>
                     <span class="node-icon">📊</span>
-                    <span class="node-name">图表生成器</span>
+                    <span class="node-name">图表生成智能体</span>
                     <span :class="['agent-status-dot', 'idle']"></span>
                   </div>
                 </div>
@@ -140,7 +140,6 @@ const loading = ref(false)
 const error = ref('')
 const sidebarCollapsed = ref(false)
 const currentActiveAgent = ref('')
-const currentMainMessageIndex = ref(-1) // 当前请求的主消息框索引（所有输出聚合到这里）
 
 // 智能体团队状态（基于官方 LangGraph 教程三层结构）
 const agentTeam = reactive([
@@ -150,12 +149,12 @@ const agentTeam = reactive([
   { name: '研究团队', avatar: '👥', status: 'idle', active: false, role: 'research_team', layer: 2 },
   { name: '文档写作团队', avatar: '📝', status: 'idle', active: false, role: 'document_writing_team', layer: 2 },
   // 第 3 层 - 研究团队
-  { name: '搜索器', avatar: '🔍', status: 'idle', active: false, role: 'searcher', layer: 3 },
-  { name: '网页爬虫', avatar: '🕷️', status: 'idle', active: false, role: 'web_crawler', layer: 3 },
+  { name: '网页搜索智能体', avatar: '🔍', status: 'idle', active: false, role: 'searcher', layer: 3 },
+  { name: '网页爬取智能体', avatar: '🕷️', status: 'idle', active: false, role: 'web_crawler', layer: 3 },
   // 第 3 层 - 文档写作团队
-  { name: '写作者', avatar: '✍️', status: 'idle', active: false, role: 'writer', layer: 3 },
-  { name: '记事本', avatar: '📓', status: 'idle', active: false, role: 'notebook', layer: 3 },
-  { name: '图表生成器', avatar: '📊', status: 'idle', active: false, role: 'chart_generator', layer: 3 }
+  { name: '文档写作智能体', avatar: '✍️', status: 'idle', active: false, role: 'writer', layer: 3 },
+  { name: '大纲生成智能体', avatar: '📓', status: 'idle', active: false, role: 'outline', layer: 3 },
+  { name: '图表生成智能体', avatar: '📊', status: 'idle', active: false, role: 'chart_generator', layer: 3 }
 ])
 
 /**
@@ -186,9 +185,6 @@ const handleSubmit = async (task) => {
     timestamp: new Date().toISOString()
   }
   messages.value.push(userMessage)
-
-  // 初始化当前主消息框索引
-  currentMainMessageIndex.value = -1
 
   // 开始加载
   loading.value = true
@@ -255,107 +251,100 @@ const fetchStreamData = async (task) => {
 
             const parsedData = JSON.parse(jsonData)
             const agentName = parsedData.agent || '系统'
+            const nodeName = parsedData.node || 'unknown'
             console.log('接收到数据:', parsedData.type, agentName, parsedData.message?.substring(0, 50))
 
-            // 只显示主管（supervisor）的消息
-            if (parsedData.node === 'supervisor') {
-              const messageType = parsedData.type
+            // 根据node字段查找对应的智能体消息框
+            let messageIndex = -1
+            let targetMessage = null
 
-              // 思考过程：追加到当前主消息框（保持打字机效果）
-              if (messageType === 'thinking') {
-                if (currentMainMessageIndex.value === -1) {
-                  // 创建新的主消息框（这是本次请求的第一个消息）
-                  messages.value.push(parsedData)
-                  currentMainMessageIndex.value = messages.value.length - 1
-                } else {
-                  // 追加内容到当前主消息框 - 必须使用 Vue 的响应式方式更新
-                  const index = currentMainMessageIndex.value
-                  const currentMessage = messages.value[index]
-                  if (currentMessage) {
-                    // 关键：创建新对象而不是直接修改属性，触发 Vue 响应式更新
-                    // 追加新内容而不是替换（在原有内容后添加换行和新内容）
-                    const separator = currentMessage.message.endsWith('\n') ? '' : '\n'
-                    const newMessage = {
-                      ...currentMessage,
-                      message: currentMessage.message + separator + parsedData.message
-                    }
-                    // 使用 splice 替换元素，确保 Vue 检测到变化
-                    messages.value.splice(index, 1, newMessage)
-                  }
-                }
+            // 查找是否已有该智能体的消息框
+            for (let i = 0; i < messages.value.length; i++) {
+              if (messages.value[i].node === nodeName && messages.value[i].agent === agentName) {
+                messageIndex = i
+                targetMessage = messages.value[i]
+                break
               }
+            }
 
-              // 结果输出：追加到同一个主消息框（不换框）
-              else if (messageType === 'result' || messageType === 'final') {
-                if (currentMainMessageIndex.value !== -1) {
-                  // 追加到当前主消息框，添加换行分隔 - 必须创建新对象触发更新
-                  const index = currentMainMessageIndex.value
-                  const currentMessage = messages.value[index]
-                  if (currentMessage) {
-                    // 如果之前是思考过程，添加分隔符
-                    const separator = currentMessage.message.endsWith('\n') ? '' : '\n\n'
-                    // 关键：创建新对象触发 Vue 响应式更新
-                    const newMessage = {
-                      ...currentMessage,
-                      message: currentMessage.message + separator + parsedData.message
-                    }
-                    // 使用 splice 替换元素，确保 Vue 检测到变化
-                    messages.value.splice(index, 1, newMessage)
-                  }
-                } else {
-                  // 如果没有主消息框，创建新的
-                  messages.value.push(parsedData)
-                  currentMainMessageIndex.value = messages.value.length - 1
+            const messageType = parsedData.type
+
+            // 思考过程：创建或追加到对应智能体的消息框
+            if (messageType === 'thinking') {
+              if (messageIndex === -1) {
+                // 创建新的消息框
+                messages.value.push(parsedData)
+              } else {
+                // 追加到现有消息框 - 保持打字机效果
+                const separator = targetMessage.message.endsWith('\n') ? '' : '\n'
+                const newMessage = {
+                  ...targetMessage,
+                  message: targetMessage.message + separator + parsedData.message
                 }
+                messages.value.splice(messageIndex, 1, newMessage)
               }
+            }
 
-              // 错误信息：追加到同一个主消息框
-              else if (messageType === 'error') {
-                if (currentMainMessageIndex.value !== -1) {
-                  const index = currentMainMessageIndex.value
-                  const currentMessage = messages.value[index]
-                  if (currentMessage) {
-                    const separator = currentMessage.message.endsWith('\n') ? '' : '\n\n'
-                    // 关键：创建新对象触发 Vue 响应式更新
-                    const newMessage = {
-                      ...currentMessage,
-                      message: currentMessage.message + separator + `❌ ${parsedData.message}`
-                    }
-                    // 使用 splice 替换元素，确保 Vue 检测到变化
-                    messages.value.splice(index, 1, newMessage)
+            // 结果输出：追加到同一个智能体消息框
+            else if (messageType === 'result' || messageType === 'final') {
+              if (messageIndex !== -1) {
+                // 检测是否为真正的流式输出（逐字输出）
+                const isRealStreaming = parsedData.is_real_streaming === true
+
+                let newMessage
+                if (isRealStreaming) {
+                  // 真正的流式输出：直接追加，不添加任何分隔符，实现打字机效果
+                  newMessage = {
+                    ...targetMessage,
+                    message: targetMessage.message + parsedData.message
                   }
                 } else {
-                  messages.value.push(parsedData)
-                  currentMainMessageIndex.value = messages.value.length - 1
-                }
-              }
-
-              // 状态信息：追加到同一个主消息框（不换框）
-              else if (messageType === 'status') {
-                if (currentMainMessageIndex.value !== -1) {
-                  const index = currentMainMessageIndex.value
-                  const currentMessage = messages.value[index]
-                  if (currentMessage) {
-                    const separator = currentMessage.message.endsWith('\n') ? '' : '\n'
-                    // 关键：创建新对象触发 Vue 响应式更新
-                    const newMessage = {
-                      ...currentMessage,
-                      message: currentMessage.message + separator + parsedData.message
-                    }
-                    // 使用 splice 替换元素，确保 Vue 检测到变化
-                    messages.value.splice(index, 1, newMessage)
+                  // 非流式输出：添加分隔符
+                  const separator = targetMessage.message.endsWith('\n') ? '' : '\n\n'
+                  newMessage = {
+                    ...targetMessage,
+                    message: targetMessage.message + separator + parsedData.message
                   }
-                } else {
-                  // 如果没有主消息框，创建新的（理论上不会发生）
-                  messages.value.push(parsedData)
-                  currentMainMessageIndex.value = messages.value.length - 1
                 }
-              }
-
-              // 其他类型（连接、结束）：创建独立消息框
-              else if (messageType === 'connection' || messageType === 'end') {
+                messages.value.splice(messageIndex, 1, newMessage)
+              } else {
+                // 如果没有消息框，创建新的
                 messages.value.push(parsedData)
               }
+            }
+
+            // 错误信息：追加到同一个智能体消息框
+            else if (messageType === 'error') {
+              if (messageIndex !== -1) {
+                const separator = targetMessage.message.endsWith('\n') ? '' : '\n\n'
+                const newMessage = {
+                  ...targetMessage,
+                  message: targetMessage.message + separator + `❌ ${parsedData.message}`
+                }
+                messages.value.splice(messageIndex, 1, newMessage)
+              } else {
+                messages.value.push(parsedData)
+              }
+            }
+
+            // 状态信息：追加到同一个智能体消息框
+            else if (messageType === 'status') {
+              if (messageIndex !== -1) {
+                const separator = targetMessage.message.endsWith('\n') ? '' : '\n'
+                const newMessage = {
+                  ...targetMessage,
+                  message: targetMessage.message + separator + parsedData.message
+                }
+                messages.value.splice(messageIndex, 1, newMessage)
+              } else {
+                // 如果没有消息框，创建新的
+                messages.value.push(parsedData)
+              }
+            }
+
+            // 其他类型（连接、结束）：创建独立消息框
+            else if (messageType === 'connection' || messageType === 'end') {
+              messages.value.push(parsedData)
             }
 
             // 立即滚动到最新消息
@@ -365,11 +354,10 @@ const fetchStreamData = async (task) => {
             // 更新智能体状态
             updateAgentFromMessage(parsedData)
 
-            // 如果收到结束信号，停止加载并重置主消息索引
+            // 如果收到结束信号，停止加载
             if (parsedData.type === 'end' || parsedData.type === 'final') {
               loading.value = false
               updateAgentStatus('idle')
-              currentMainMessageIndex.value = -1 // 请求完成，重置索引
             }
           } catch (err) {
             console.error('解析 SSE 数据错误:', err, line)
@@ -385,7 +373,6 @@ const fetchStreamData = async (task) => {
     error.value = `获取数据失败: ${err.message}`
     loading.value = false
     updateAgentStatus('idle')
-    currentMainMessageIndex.value = -1 // 出错时也要重置索引
   }
 }
 

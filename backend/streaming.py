@@ -209,24 +209,24 @@ def create_streaming_response(stream_id: str, request: Request) -> StreamingResp
 async def process_agent_stream(
     task: str,
     stream_id: str,
-    agent_team
+    task_scheduler
 ) -> None:
     """
-    处理智能体团队流式输出并推送到指定流
+    处理任务调度器流式输出并推送到指定流
 
     Args:
         task: 用户任务
         stream_id: 流式连接 ID
-        agent_team: 智能体团队实例
+        task_scheduler: 任务调度器实例
     """
     try:
         # 创建后台任务队列用于实时转发
         output_queue = asyncio.Queue()
 
-        # 启动智能体团队任务处理（在后台运行）
-        async def run_agent_task():
+        # 启动任务调度器处理（在后台运行）
+        async def run_scheduler_task():
             try:
-                async for data in agent_team.process_task_stream(task):
+                async for data in task_scheduler.receive_task(task, enable_streaming=True):
                     await output_queue.put(data)
                 await output_queue.put({"type": "task_completed"})  # 任务完成信号
             except Exception as e:
@@ -238,7 +238,7 @@ async def process_agent_stream(
                 })
 
         # 在后台启动任务
-        task_handle = asyncio.create_task(run_agent_task())
+        task_handle = asyncio.create_task(run_scheduler_task())
 
         # 实时从队列读取并转发到流管理器
         while True:

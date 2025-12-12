@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 import uvicorn
 
 # 导入本地模块
-from hierarchical_agent_teams import create_agent_team, HierarchicalAgentTeam
+from hierarchical_agent_teams import create_agent_team, HierarchicalAgentTeam, create_task_scheduler
 from streaming import (
     stream_manager,
     create_streaming_response,
@@ -89,6 +89,9 @@ app.add_middleware(
 
 # 全局智能体团队实例（实际生产中应考虑线程安全）
 agent_team: HierarchicalAgentTeam = create_agent_team()
+
+# 全局任务调度器实例（统一管理任务调度）
+task_scheduler = create_task_scheduler(agent_team)
 
 
 # ==============================================================================
@@ -155,35 +158,35 @@ async def get_agents():
             "name": "第3层 - 执行节点",
             "nodes": {
                 "searcher": {
-                    "name": "搜索器",
+                    "name": "网页搜索智能体",
                     "role": "Search Specialist",
                     "description": "负责网络搜索和信息查找",
                     "tools": ["web_search"],
                     "layer": 3
                 },
                 "web_crawler": {
-                    "name": "网页爬虫",
+                    "name": "网页爬取智能体",
                     "role": "Web Crawler Specialist",
                     "description": "负责网页内容抓取",
                     "tools": ["web_crawler"],
                     "layer": 3
                 },
                 "writer": {
-                    "name": "写作者",
+                    "name": "文档写作智能体",
                     "role": "Writing Specialist",
                     "description": "负责文档撰写",
                     "tools": ["write_document", "read_document", "create_outline"],
                     "layer": 3
                 },
-                "notebook": {
-                    "name": "记事本",
-                    "role": "Notebook Specialist",
-                    "description": "负责创建和管理笔记",
-                    "tools": ["create_notebook"],
+                "outline": {
+                    "name": "大纲生成智能体",
+                    "role": "Outline Generation Specialist",
+                    "description": "负责创建文档大纲",
+                    "tools": ["create_outline"],
                     "layer": 3
                 },
                 "chart_generator": {
-                    "name": "图表生成器",
+                    "name": "图表生成智能体",
                     "role": "Chart Generation Specialist",
                     "description": "负责数据可视化",
                     "tools": ["generate_chart"],
@@ -207,25 +210,16 @@ async def chat_sync(request: ChatRequest):
         raise HTTPException(status_code=400, detail=validation_error)
 
     try:
-        # 同步执行任务（收集所有流式数据）
-        results = []
-        async for data in agent_team.process_task_stream(request.task):
-            results.append(data)
-
-        # 组合最终结果
-        final_message = ""
-        for result in results:
-            if result.get("type") == "final":
-                final_message = result.get("message", "")
-                break
+        # 使用任务调度器同步执行任务（禁用流式输出）
+        result = await task_scheduler.execute_sync(request.task)
 
         return ChatResponse(
             success=True,
             message="任务执行完成",
             data={
                 "task": request.task,
-                "result": final_message,
-                "steps": results
+                "result": result["result"],
+                "steps": result["steps"]
             },
             timestamp="2025-12-10"
         )
@@ -295,7 +289,7 @@ async def chat_stream_v2(request: Request, chat_request: ChatRequest):
 
     # 创建后台任务
     background_task = asyncio.create_task(
-        process_agent_stream(chat_request.task, stream_id, agent_team)
+        process_agent_stream(chat_request.task, stream_id, task_scheduler)
     )
 
     # 返回 SSE 响应
